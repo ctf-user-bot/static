@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iOS Entitlements Reference</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  body { padding: 2rem 0 4rem; }
+  code { word-break: break-all; }
+  h2 { font-size: 1.15rem; margin-top: 2rem; }
+  .tag { font-weight: 500; vertical-align: baseline; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1 class="h3">iOS Entitlements Reference</h1>
+  <p class="text-muted">Entitlement keys granted through the provisioning profile and code signature. Enable them in Xcode under <strong>Signing &amp; Capabilities</strong>; they are stored in the app's <code>.entitlements</code> file.</p>
+
+  <div class="row mb-3">
+    <div class="col-md-5">
+      <input id="search" type="search" class="form-control form-control-sm" placeholder="Filter by key, capability, or usage...">
+    </div>
+    <div class="col-md-3 d-flex align-items-center">
+      <small id="count" class="text-muted"></small>
+    </div>
+  </div>
+
+  <h2>1. Core &amp; Identity</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>application-identifier</code></td><td>App ID</td><td>Uniquely identifies the app (TeamID + bundle ID). Basis for keychain, app groups, and iCloud scoping. <span class="badge rounded-pill text-bg-light border tag">Auto-added</span></td></tr>
+        <tr><td><code>com.apple.developer.team-identifier</code></td><td>Team ID</td><td>Identifies the developer team that signed the app. <span class="badge rounded-pill text-bg-light border tag">Auto-added</span></td></tr>
+        <tr><td><code>get-task-allow</code></td><td>Debugging</td><td><code>true</code> in development builds so the debugger can attach; must be <code>false</code> in App Store builds. <span class="badge rounded-pill text-bg-light border tag">Auto-added</span></td></tr>
+        <tr><td><code>beta-reports-active</code></td><td>TestFlight</td><td>Present in TestFlight (beta) distribution builds for crash reporting. <span class="badge rounded-pill text-bg-light border tag">Auto-added</span></td></tr>
+        <tr><td><code>keychain-access-groups</code></td><td>Keychain Sharing</td><td>Lets multiple apps from the same team read/write shared keychain items (shared logins, tokens).</td></tr>
+        <tr><td><code>com.apple.security.application-groups</code></td><td>App Groups</td><td>Shared container and <code>UserDefaults(suiteName:)</code> between an app and its extensions/widgets, or between your apps.</td></tr>
+        <tr><td><code>com.apple.developer.default-data-protection</code></td><td>Data Protection</td><td>Sets the default file-encryption class for app files (e.g. <code>NSFileProtectionComplete</code> — encrypted while the device is locked).</td></tr>
+        <tr><td><code>com.apple.developer.devicecheck.appattest-environment</code></td><td>App Attest</td><td>DeviceCheck / App Attest for verifying that requests to your server come from a genuine, unmodified app.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>2. Push &amp; Notifications</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>aps-environment</code></td><td>Push Notifications</td><td>Enables APNs. Value is <code>development</code> or <code>production</code>; required to receive remote pushes.</td></tr>
+        <tr><td><code>com.apple.developer.usernotifications.critical-alerts</code></td><td>Critical Alerts</td><td>Notifications that bypass Do Not Disturb and the mute switch (health, safety, home security). <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.usernotifications.time-sensitive</code></td><td>Time Sensitive</td><td>Marks notifications as time-sensitive so they break through Focus modes when the user allows it.</td></tr>
+        <tr><td><code>com.apple.developer.usernotifications.communication</code></td><td>Communication</td><td>Communication-style notifications (sender avatars, Siri suggestions) for messaging/calling apps via SiriKit intents.</td></tr>
+        <tr><td><code>com.apple.developer.usernotifications.filtering</code></td><td>Notification Filtering</td><td>Lets a Notification Service Extension silently drop incoming pushes (e.g. E2E-encrypted apps that must decrypt first). <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.location.push</code></td><td>Location Push</td><td>Location Push Service Extension — query a user's location via an APNs location push (find-my-friends-style apps). <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>3. iCloud &amp; Continuity</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>com.apple.developer.icloud-services</code></td><td>iCloud</td><td>Which iCloud services the app uses: <code>CloudKit</code> and/or <code>CloudDocuments</code>.</td></tr>
+        <tr><td><code>com.apple.developer.icloud-container-identifiers</code></td><td>iCloud Containers</td><td>The CloudKit / iCloud Drive container IDs the app can access.</td></tr>
+        <tr><td><code>com.apple.developer.icloud-container-environment</code></td><td>CloudKit Environment</td><td>Selects the CloudKit container environment (<code>Development</code> or <code>Production</code>) for non-App-Store builds.</td></tr>
+        <tr><td><code>com.apple.developer.ubiquity-container-identifiers</code></td><td>iCloud Documents</td><td>iCloud Drive / document-storage container IDs (used with the <code>CloudDocuments</code> service).</td></tr>
+        <tr><td><code>com.apple.developer.ubiquity-kvstore-identifier</code></td><td>Key-Value Store</td><td>iCloud key-value storage (<code>NSUbiquitousKeyValueStore</code>) for small synced settings.</td></tr>
+        <tr><td><code>com.apple.developer.associated-domains</code></td><td>Associated Domains</td><td>Universal Links, shared web credentials / password AutoFill, Handoff, and App Clip domains (<code>applinks:</code>, <code>webcredentials:</code>, <code>appclips:</code>).</td></tr>
+        <tr><td><code>com.apple.developer.associated-domains.mdm-managed</code></td><td>Managed Domains</td><td>Allows an MDM to supply associated domains at deploy time (enterprise apps whose domains differ per customer).</td></tr>
+        <tr><td><code>com.apple.developer.shared-with-you</code></td><td>Shared with You</td><td>Surfaces links shared in Messages inside your app via the Shared with You framework.</td></tr>
+        <tr><td><code>com.apple.developer.group-session</code></td><td>SharePlay</td><td>Group Activities framework — shared experiences over FaceTime (watch together, listen together).</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>4. Sign-In, Payments &amp; Wallet</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>com.apple.developer.applesignin</code></td><td>Sign in with Apple</td><td>Enables the "Sign in with Apple" authentication flow.</td></tr>
+        <tr><td><code>com.apple.developer.in-app-payments</code></td><td>Apple Pay</td><td>Apple Pay payment processing; lists your registered merchant IDs.</td></tr>
+        <tr><td><code>com.apple.developer.pass-type-identifiers</code></td><td>Wallet (PassKit)</td><td>Create, add, and update Wallet passes (boarding passes, tickets, loyalty cards).</td></tr>
+        <tr><td><code>com.apple.developer.proximity-reader.payment.acceptance</code></td><td>Tap to Pay on iPhone</td><td>Accept contactless card payments directly on iPhone (merchant apps). <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.authentication-services.autofill-credential-provider</code></td><td>Credential Provider</td><td>Lets a password-manager app supply credentials/passkeys to Password AutoFill system-wide.</td></tr>
+        <tr><td><code>com.apple.developer.storekit.external-purchase</code></td><td>External Purchase</td><td>Offer purchases through an external system instead of In-App Purchase (region-limited). Sibling: <code>external-purchase-link</code> for linking out to your website. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.storekit.external-link.account</code></td><td>External Account Link</td><td>"Reader" apps linking to an external account-management/signup page. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.secure-element-pass</code></td><td>Secure Element Pass</td><td>Provision and use contactless passes on the Secure Element (car keys, transit, access badges). <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.passkit.pass-presentation-suppression</code></td><td>Pay Suppression</td><td>Suppress the automatic Apple Pay sheet when the device is near a payment terminal (point-of-sale apps). <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>5. Health, Home &amp; Family</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>com.apple.developer.healthkit</code></td><td>HealthKit</td><td>Read/write health and fitness data with user consent (steps, heart rate, workouts).</td></tr>
+        <tr><td><code>com.apple.developer.healthkit.access</code></td><td>HealthKit (extended)</td><td>Extra HealthKit data classes, e.g. clinical health records (FHIR).</td></tr>
+        <tr><td><code>com.apple.developer.healthkit.background-delivery</code></td><td>HealthKit Background</td><td>Receive HealthKit updates in the background (<code>enableBackgroundDelivery</code>) while the app isn't running.</td></tr>
+        <tr><td><code>com.apple.developer.homekit</code></td><td>HomeKit</td><td>Discover and control HomeKit smart-home accessories.</td></tr>
+        <tr><td><code>com.apple.developer.matter.allow-setup-payload</code></td><td>Matter</td><td>Set up Matter smart-home accessories from your app.</td></tr>
+        <tr><td><code>com.apple.developer.family-controls</code></td><td>Family Controls</td><td>Screen Time API for parental-control apps (app limits, shields, activity monitoring). Approval needed for distribution builds only. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.exposure-notification</code></td><td>Exposure Notification</td><td>Exposure notification API; restricted to public-health authorities. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.sensitivecontentanalysis.client</code></td><td>Sensitive Content</td><td>SensitiveContentAnalysis framework — detect nudity in images/video to blur it (communication safety).</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>6. Networking</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>com.apple.developer.networking.networkextension</code></td><td>Network Extensions</td><td>Content filters, DNS proxies, packet tunnels, app proxies. Some subtypes need approval. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.networking.vpn.api</code></td><td>Personal VPN</td><td>Create and manage VPN configurations with <code>NEVPNManager</code> (value <code>allow-vpn</code>).</td></tr>
+        <tr><td><code>com.apple.developer.networking.wifi-info</code></td><td>Access Wi-Fi Info</td><td>Read the current Wi-Fi SSID/BSSID (with location permission).</td></tr>
+        <tr><td><code>com.apple.developer.networking.HotspotConfiguration</code></td><td>Hotspot Config</td><td>Programmatically join Wi-Fi networks (<code>NEHotspotConfigurationManager</code>) — common in IoT device setup.</td></tr>
+        <tr><td><code>com.apple.developer.networking.multipath</code></td><td>Multipath TCP</td><td>Seamless Wi-Fi / cellular handover for TCP connections. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.networking.manage-thread-network-credentials</code></td><td>Thread Network</td><td>Manage Thread mesh-network credentials for smart-home accessories.</td></tr>
+        <tr><td><code>com.apple.external-accessory.wireless-configuration</code></td><td>Accessory Setup</td><td>Configure MFi wireless accessories over Wi-Fi.</td></tr>
+        <tr><td><code>com.apple.developer.networking.slicing.appcategory</code></td><td>5G Network Slicing</td><td>Route the app's traffic over a carrier 5G network slice. Sibling: <code>slicing.trafficcategory</code>. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>7. Hardware &amp; Sensors</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>com.apple.developer.nfc.readersession.formats</code></td><td>NFC Tag Reading</td><td>Read NFC NDEF tags and ISO 7816/14443 tags with Core NFC (values <code>NDEF</code>, <code>TAG</code>).</td></tr>
+        <tr><td><code>com.apple.developer.proximity-reader.identity.display</code></td><td>ID Verifier</td><td>Read and display mobile driver's licenses / IDs presented from Wallet. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.kernel.increased-memory-limit</code></td><td>Increased Memory</td><td>Raises the app's memory ceiling on supported devices (heavy media/ML workloads).</td></tr>
+        <tr><td><code>com.apple.developer.kernel.extended-virtual-addressing</code></td><td>Extended VA</td><td>Larger virtual address space for very large memory mappings.</td></tr>
+        <tr><td><code>com.apple.developer.driverkit</code></td><td>DriverKit (iPadOS)</td><td>Ship USB/audio device drivers in an iPadOS app. Siblings: <code>driverkit.transport.usb</code>, <code>driverkit.allow-third-party-userclients</code>, <code>driverkit.communicates-with-drivers</code>. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.avfoundation.multitasking-camera-access</code></td><td>Multitasking Camera</td><td>Keep using the camera in Split View / Slide Over / Picture in Picture (iPad video-conferencing apps). <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.media-device-discovery-extension</code></td><td>Media Device Discovery</td><td>Extension that surfaces third-party media devices (e.g. DockKit / capture devices) in the system device picker.</td></tr>
+        <tr><td><code>com.apple.developer.severe-vehicular-crash-event</code></td><td>Crash Detection</td><td>Receive severe-car-crash events from Crash Detection hardware (emergency-response apps). <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>inter-app-audio</code></td><td>Inter-App Audio</td><td>Legacy audio streaming between apps (deprecated — use Audio Unit extensions).</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>8. Siri, CarPlay &amp; System Integration</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>com.apple.developer.siri</code></td><td>Siri / SiriKit</td><td>Handle Siri intents (messaging, payments, workouts, shortcuts donations).</td></tr>
+        <tr><td><code>com.apple.developer.carplay-audio</code></td><td>CarPlay Audio</td><td>CarPlay audio apps (music, podcasts, radio). Sibling keys per category: <code>carplay-messaging</code>, <code>carplay-parking</code>, <code>carplay-charging</code>, <code>carplay-maps</code>. All categories need approval. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.push-to-talk</code></td><td>Push to Talk</td><td>Walkie-talkie-style audio with the system Push to Talk framework and background channel.</td></tr>
+        <tr><td><code>com.apple.developer.ClassKit-environment</code></td><td>ClassKit</td><td>Education apps reporting student progress to Apple Schoolwork.</td></tr>
+        <tr><td><code>com.apple.developer.automatic-assessment-configuration</code></td><td>Assessment Mode</td><td>Lock the device into a single-app assessment session for exams (blocks screenshots, dictation, other apps).</td></tr>
+        <tr><td><code>com.apple.developer.game-center</code></td><td>Game Center</td><td>Leaderboards, achievements, multiplayer matchmaking.</td></tr>
+        <tr><td><code>com.apple.developer.user-fonts</code></td><td>Fonts</td><td>Install fonts system-wide or use fonts installed by other apps.</td></tr>
+        <tr><td><code>com.apple.developer.weatherkit</code></td><td>WeatherKit</td><td>Fetch Apple Weather forecast data via WeatherKit (needs the capability on the App ID).</td></tr>
+        <tr><td><code>com.apple.developer.journal.allow</code></td><td>Journaling Suggestions</td><td>Surface your app's moments as suggestions in the Journal app.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>9. App Clips &amp; Extensions</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>com.apple.developer.on-demand-install-capable</code></td><td>App Clip</td><td>Marks the binary as an App Clip — a lightweight, on-demand part of your app.</td></tr>
+        <tr><td><code>com.apple.developer.parent-application-identifiers</code></td><td>App Clip Parent</td><td>Links an App Clip to its full parent app's identifier.</td></tr>
+        <tr><td><code>com.apple.developer.associated-appclip-app-identifiers</code></td><td>App Clip Link</td><td>On the parent app: declares its associated App Clip.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>10. Privacy-Gated Data Access</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>com.apple.developer.contacts.notes</code></td><td>Contact Notes</td><td>Read the Notes field of contacts (hidden from apps by default since iOS 13). <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.device-information.user-assigned-device-name</code></td><td>Device Name</td><td>Read the user-assigned device name (e.g. "Alex's iPhone") instead of the generic model name. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>11. Alternative Distribution &amp; Browsers (EU / DMA)</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered table-striped align-middle">
+      <thead class="table-light"><tr><th style="width:35%">Entitlement key</th><th style="width:18%">Capability</th><th>Usage</th></tr></thead>
+      <tbody>
+        <tr><td><code>com.apple.developer.web-browser</code></td><td>Default Browser</td><td>Marks the app as a full web browser eligible to be the user's default browser.</td></tr>
+        <tr><td><code>com.apple.developer.web-browser-engine.host</code></td><td>Browser Engine</td><td>Ship a non-WebKit browser engine with BrowserEngineKit <span class="badge rounded-pill text-bg-light border tag">EU only</span>. Siblings: <code>web-browser-engine.webcontent</code>, <code>.networking</code>, <code>.rendering</code> for the helper extensions. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.marketplace.app-installation</code></td><td>Marketplace</td><td>Operate an alternative app marketplace that can install other apps <span class="badge rounded-pill text-bg-light border tag">EU only</span>. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+        <tr><td><code>com.apple.developer.nfc.hce</code></td><td>NFC Host Card Emulation</td><td>Contactless payments/transactions from your own app via NFC card emulation, bypassing Apple Pay <span class="badge rounded-pill text-bg-light border tag">EU only</span>. Sibling: <code>nfc.hce.default-contactless-app</code>. <span class="badge rounded-pill text-bg-light border tag">Apple approval</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <hr>
+  <p class="text-muted small mb-0">
+    <strong>How entitlements work:</strong> an entitlement only takes effect when it appears in both the app's code signature (the <code>.entitlements</code> file) and the provisioning profile — which requires the matching capability enabled on the App ID in the Apple Developer portal. A mismatch is the classic cause of install error <code>0xE8008016</code> ("provisioning profile doesn't include entitlement").
+    Inspect a built app's entitlements with: <code>codesign -d --entitlements - MyApp.app</code>.
+    <span class="badge rounded-pill text-bg-light border tag">Apple approval</span> — the capability must be requested from Apple at developer.apple.com and granted before it appears in your account.
+    <span class="badge rounded-pill text-bg-light border tag">Auto-added</span> — injected by Xcode / the signing process; you never add it to the <code>.entitlements</code> file yourself.
+    <span class="badge rounded-pill text-bg-light border tag">EU only</span> — available only for apps distributed in the European Union under the Digital Markets Act.
+  </p>
+
+</div>
+
+<script>
+  var search = document.getElementById('search');
+  var count = document.getElementById('count');
+  var rows = Array.prototype.slice.call(document.querySelectorAll('tbody tr'));
+  var total = rows.length;
+  count.textContent = total + ' entitlements';
+
+  search.addEventListener('input', function () {
+    var q = search.value.trim().toLowerCase();
+    var visible = 0;
+    rows.forEach(function (r) {
+      var show = !q || r.textContent.toLowerCase().indexOf(q) !== -1;
+      r.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    document.querySelectorAll('.table-responsive').forEach(function (t) {
+      var any = Array.prototype.some.call(t.querySelectorAll('tbody tr'), function (r) { return r.style.display !== 'none'; });
+      t.style.display = any ? '' : 'none';
+      var h = t.previousElementSibling;
+      if (h && h.tagName === 'H2') h.style.display = any ? '' : 'none';
+    });
+    count.textContent = q ? (visible + ' of ' + total + ' entitlements') : (total + ' entitlements');
+  });
+</script>
+</body>
+</html>
