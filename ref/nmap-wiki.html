@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nmap Command Viewer</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  body { font-size: 14px; }
+  .app-grid { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+  .sidebar { border-right: 1px solid var(--bs-border-color); height: 100vh; overflow-y: auto; position: sticky; top: 0; }
+  .main { padding: 1.25rem 1.5rem; }
+  .cmd-input { font-family: var(--bs-font-monospace); font-size: 15px; }
+  .token { font-family: var(--bs-font-monospace); }
+  .flag-pill { cursor: pointer; }
+  .cat-header { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--bs-secondary-color); padding: .5rem .75rem .25rem; }
+  .flag-row { padding: .3rem .75rem; cursor: pointer; border-left: 2px solid transparent; }
+  .flag-row:hover { background: var(--bs-tertiary-bg); }
+  .flag-row code { font-size: 12px; }
+  .flag-row small { display: block; color: var(--bs-secondary-color); line-height: 1.2; }
+  .viz-token { border: 1px solid var(--bs-border-color); border-radius: .375rem; padding: .5rem .75rem; margin: 0 .35rem .35rem 0; display: inline-block; vertical-align: top; }
+  .viz-token .vt-flag { font-family: var(--bs-font-monospace); font-weight: 600; }
+  .viz-token .vt-desc { font-size: 12px; color: var(--bs-secondary-color); }
+  .viz-token.unknown { border-style: dashed; }
+  .viz-token.target { border-color: var(--bs-primary); }
+  .detail-card code { white-space: pre-wrap; }
+  .mono { font-family: var(--bs-font-monospace); }
+  @media (max-width: 767px) { .app-grid { grid-template-columns: 1fr; } .sidebar { height: auto; position: static; } }
+</style>
+</head>
+<body>
+<div class="app-grid">
+  <!-- Sidebar -->
+  <aside class="sidebar bg-body-tertiary">
+    <div class="p-3 border-bottom">
+      <h6 class="mb-2 fw-bold">Nmap Reference</h6>
+      <input id="sidebarSearch" type="search" class="form-control form-control-sm mb-2" placeholder="Search flags...">
+      <select id="catFilter" class="form-select form-select-sm">
+        <option value="">All categories</option>
+      </select>
+    </div>
+    <div id="flagList"></div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0">Nmap Command Viewer</h5>
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="themeToggle">
+        <label class="form-check-label small" for="themeToggle">Dark</label>
+      </div>
+    </div>
+
+    <label class="form-label small text-secondary mb-1">Paste or type a full nmap command</label>
+    <textarea id="cmdInput" class="form-control cmd-input mb-2" rows="2"
+      placeholder="nmap -sC -sV -O -p 1-1000 -T4 scanme.nmap.org">nmap -sS -sV -sC -O -p- -T4 --script vuln 192.168.1.0/24</textarea>
+
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <button id="clearBtn" class="btn btn-sm btn-outline-secondary">Clear</button>
+      <button id="copyBtn" class="btn btn-sm btn-outline-secondary">Copy command</button>
+      <div class="ms-auto small text-secondary align-self-center" id="summary"></div>
+    </div>
+
+    <h6 class="text-secondary small text-uppercase">Visualized breakdown</h6>
+    <div id="viz" class="mb-4"></div>
+
+    <h6 class="text-secondary small text-uppercase">Details</h6>
+    <div id="details"></div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ---- Nmap flag database ----
+// Each entry: flag, category, arg (does it take a value?), title, desc, example
+const FLAGS = [
+  // Target specification
+  {f:"-iL", cat:"Target Specification", arg:true, title:"Input from list", desc:"Read the list of targets/hosts from a file.", ex:"-iL targets.txt"},
+  {f:"-iR", cat:"Target Specification", arg:true, title:"Random targets", desc:"Choose N random targets to scan across the internet.", ex:"-iR 100"},
+  {f:"--exclude", cat:"Target Specification", arg:true, title:"Exclude hosts", desc:"Exclude a comma-separated list of hosts/networks.", ex:"--exclude 10.0.0.5,10.0.0.6"},
+  {f:"--excludefile", cat:"Target Specification", arg:true, title:"Exclude from file", desc:"Exclude hosts listed in the given file.", ex:"--excludefile skip.txt"},
+
+  // Host discovery
+  {f:"-sL", cat:"Host Discovery", arg:false, title:"List scan", desc:"Simply list targets to scan; do not send any packets.", ex:"-sL 10.0.0.0/24"},
+  {f:"-sn", cat:"Host Discovery", arg:false, title:"Ping scan (no port scan)", desc:"Host discovery only — disable port scanning. Replaces the old -sP.", ex:"-sn 192.168.1.0/24"},
+  {f:"-Pn", cat:"Host Discovery", arg:false, title:"No ping / treat all up", desc:"Skip host discovery; treat every host as online. Useful when hosts block pings.", ex:"-Pn 10.0.0.5"},
+  {f:"-PS", cat:"Host Discovery", arg:true, title:"TCP SYN ping", desc:"TCP SYN discovery to the given ports (default 80).", ex:"-PS22,80,443"},
+  {f:"-PA", cat:"Host Discovery", arg:true, title:"TCP ACK ping", desc:"TCP ACK discovery to the given ports.", ex:"-PA80"},
+  {f:"-PU", cat:"Host Discovery", arg:true, title:"UDP ping", desc:"UDP discovery to the given ports.", ex:"-PU53"},
+  {f:"-PE", cat:"Host Discovery", arg:false, title:"ICMP echo ping", desc:"ICMP echo request discovery.", ex:"-PE"},
+  {f:"-PP", cat:"Host Discovery", arg:false, title:"ICMP timestamp", desc:"ICMP timestamp request discovery.", ex:"-PP"},
+  {f:"-PM", cat:"Host Discovery", arg:false, title:"ICMP netmask", desc:"ICMP address mask request discovery.", ex:"-PM"},
+  {f:"-PR", cat:"Host Discovery", arg:false, title:"ARP ping", desc:"ARP discovery on a local network (fast and reliable on LAN).", ex:"-PR"},
+  {f:"-n", cat:"Host Discovery", arg:false, title:"No DNS resolution", desc:"Never do reverse DNS resolution (speeds up scans).", ex:"-n"},
+  {f:"-R", cat:"Host Discovery", arg:false, title:"Resolve all", desc:"Do reverse DNS resolution on all targets, even offline ones.", ex:"-R"},
+  {f:"--dns-servers", cat:"Host Discovery", arg:true, title:"Custom DNS servers", desc:"Specify custom DNS servers.", ex:"--dns-servers 8.8.8.8"},
+  {f:"--traceroute", cat:"Host Discovery", arg:false, title:"Traceroute", desc:"Trace the network path to each host.", ex:"--traceroute"},
+
+  // Scan techniques
+  {f:"-sS", cat:"Scan Techniques", arg:false, title:"TCP SYN scan", desc:"Half-open stealth scan. Fast and default when run as root. Never completes the TCP handshake.", ex:"-sS -p 443"},
+  {f:"-sT", cat:"Scan Techniques", arg:false, title:"TCP connect scan", desc:"Full TCP handshake via the OS connect() call. Used when SYN scan is not possible (no raw sockets).", ex:"-sT"},
+  {f:"-sU", cat:"Scan Techniques", arg:false, title:"UDP scan", desc:"Scan UDP ports. Slower but finds services SYN scans miss (DNS, SNMP, DHCP).", ex:"-sU -p 53,161"},
+  {f:"-sA", cat:"Scan Techniques", arg:false, title:"TCP ACK scan", desc:"Maps firewall rulesets — determines whether ports are filtered, not open/closed.", ex:"-sA"},
+  {f:"-sW", cat:"Scan Techniques", arg:false, title:"TCP Window scan", desc:"Like ACK scan but exploits window-size quirks to distinguish open ports on some systems.", ex:"-sW"},
+  {f:"-sM", cat:"Scan Techniques", arg:false, title:"TCP Maimon scan", desc:"FIN/ACK probe; works against some BSD-derived stacks.", ex:"-sM"},
+  {f:"-sN", cat:"Scan Techniques", arg:false, title:"TCP Null scan", desc:"Sends no TCP flags. Stealthy; can slip past some non-stateful firewalls.", ex:"-sN"},
+  {f:"-sF", cat:"Scan Techniques", arg:false, title:"TCP FIN scan", desc:"Sends only the FIN flag to evade certain filters.", ex:"-sF"},
+  {f:"-sX", cat:"Scan Techniques", arg:false, title:"Xmas scan", desc:"Sets FIN, PSH and URG flags (lights the packet up like a Christmas tree).", ex:"-sX"},
+  {f:"-sI", cat:"Scan Techniques", arg:true, title:"Idle/zombie scan", desc:"Blind spoofed scan through a zombie host using IP ID sequence.", ex:"-sI zombie:80 target"},
+  {f:"-sY", cat:"Scan Techniques", arg:false, title:"SCTP INIT scan", desc:"SCTP equivalent of a SYN scan.", ex:"-sY"},
+  {f:"-sZ", cat:"Scan Techniques", arg:false, title:"SCTP COOKIE-ECHO", desc:"Stealthier SCTP scan variant.", ex:"-sZ"},
+  {f:"-sO", cat:"Scan Techniques", arg:false, title:"IP protocol scan", desc:"Determines which IP protocols (TCP, ICMP, IGMP...) the target supports.", ex:"-sO"},
+  {f:"--scanflags", cat:"Scan Techniques", arg:true, title:"Custom TCP flags", desc:"Set arbitrary TCP flags for advanced/custom scans.", ex:"--scanflags SYNACK"},
+  {f:"-b", cat:"Scan Techniques", arg:true, title:"FTP bounce scan", desc:"Scan through an FTP relay server.", ex:"-b ftp.example.com"},
+
+  // Port specification
+  {f:"-p", cat:"Port Specification", arg:true, title:"Port ranges", desc:"Scan only the specified ports. Accepts ranges and protocol prefixes.", ex:"-p 22,80,443 / -p 1-65535 / -p U:53,T:80"},
+  {f:"-p-", cat:"Port Specification", arg:false, title:"All ports", desc:"Scan all 65535 TCP ports (shorthand for -p 1-65535).", ex:"-p-"},
+  {f:"-F", cat:"Port Specification", arg:false, title:"Fast scan", desc:"Scan fewer ports than the default (top 100).", ex:"-F"},
+  {f:"-r", cat:"Port Specification", arg:false, title:"Sequential ports", desc:"Scan ports in order rather than randomizing.", ex:"-r"},
+  {f:"--top-ports", cat:"Port Specification", arg:true, title:"Top N ports", desc:"Scan the N most common ports.", ex:"--top-ports 1000"},
+  {f:"--port-ratio", cat:"Port Specification", arg:true, title:"Port ratio", desc:"Scan ports more common than the given ratio.", ex:"--port-ratio 0.05"},
+
+  // Service/Version detection
+  {f:"-sV", cat:"Service & Version Detection", arg:false, title:"Version detection", desc:"Probe open ports to determine service/version info (e.g. 'Apache httpd 2.4.52').", ex:"-sV"},
+  {f:"--version-intensity", cat:"Service & Version Detection", arg:true, title:"Version intensity", desc:"Set probe intensity from 0 (light) to 9 (all probes).", ex:"--version-intensity 9"},
+  {f:"--version-light", cat:"Service & Version Detection", arg:false, title:"Light version scan", desc:"Intensity 2 — faster, fewer probes.", ex:"--version-light"},
+  {f:"--version-all", cat:"Service & Version Detection", arg:false, title:"All version probes", desc:"Intensity 9 — try every probe.", ex:"--version-all"},
+
+  // OS detection
+  {f:"-O", cat:"OS Detection", arg:false, title:"OS detection", desc:"Enable operating-system fingerprinting via TCP/IP stack behavior.", ex:"-O"},
+  {f:"--osscan-guess", cat:"OS Detection", arg:false, title:"Aggressive OS guess", desc:"Guess OS more aggressively when no perfect match.", ex:"--osscan-guess"},
+  {f:"--osscan-limit", cat:"OS Detection", arg:false, title:"Limit OS scan", desc:"Only attempt OS detection against promising hosts (with open+closed ports).", ex:"--osscan-limit"},
+
+  // Script scan (NSE)
+  {f:"-sC", cat:"Script Scan (NSE)", arg:false, title:"Default scripts", desc:"Run the default set of NSE scripts. Equivalent to --script=default. Safe, useful scripts for banner grabbing, common enumeration, etc.", ex:"-sC"},
+  {f:"--script", cat:"Script Scan (NSE)", arg:true, title:"Run scripts", desc:"Run a comma-separated list of scripts, categories, or wildcards.", ex:"--script vuln / --script http-* / --script 'default,safe'"},
+  {f:"--script-args", cat:"Script Scan (NSE)", arg:true, title:"Script arguments", desc:"Pass arguments to NSE scripts.", ex:"--script-args user=admin,pass=1234"},
+  {f:"--script-args-file", cat:"Script Scan (NSE)", arg:true, title:"Script args file", desc:"Load NSE script arguments from a file.", ex:"--script-args-file args.txt"},
+  {f:"--script-help", cat:"Script Scan (NSE)", arg:true, title:"Script help", desc:"Show help about the given scripts.", ex:"--script-help vuln"},
+  {f:"--script-trace", cat:"Script Scan (NSE)", arg:false, title:"Script trace", desc:"Show all data sent and received by scripts.", ex:"--script-trace"},
+  {f:"--script-updatedb", cat:"Script Scan (NSE)", arg:false, title:"Update script DB", desc:"Update the NSE script database.", ex:"--script-updatedb"},
+
+  // Timing & performance
+  {f:"-T0", cat:"Timing & Performance", arg:false, title:"Paranoid timing", desc:"Slowest — for IDS evasion. Serial, very long waits.", ex:"-T0"},
+  {f:"-T1", cat:"Timing & Performance", arg:false, title:"Sneaky timing", desc:"Slow, for IDS evasion.", ex:"-T1"},
+  {f:"-T2", cat:"Timing & Performance", arg:false, title:"Polite timing", desc:"Slows down to use less bandwidth and target resources.", ex:"-T2"},
+  {f:"-T3", cat:"Timing & Performance", arg:false, title:"Normal timing", desc:"The default timing template.", ex:"-T3"},
+  {f:"-T4", cat:"Timing & Performance", arg:false, title:"Aggressive timing", desc:"Faster; assumes a reasonably fast and reliable network. Common default for CTFs/labs.", ex:"-T4"},
+  {f:"-T5", cat:"Timing & Performance", arg:false, title:"Insane timing", desc:"Fastest; sacrifices accuracy for speed.", ex:"-T5"},
+  {f:"--min-rate", cat:"Timing & Performance", arg:true, title:"Minimum packet rate", desc:"Send packets no slower than N per second.", ex:"--min-rate 1000"},
+  {f:"--max-rate", cat:"Timing & Performance", arg:true, title:"Maximum packet rate", desc:"Send packets no faster than N per second.", ex:"--max-rate 100"},
+  {f:"--max-retries", cat:"Timing & Performance", arg:true, title:"Max retries", desc:"Cap the number of port-scan probe retransmissions.", ex:"--max-retries 2"},
+  {f:"--host-timeout", cat:"Timing & Performance", arg:true, title:"Host timeout", desc:"Give up on a host after this long.", ex:"--host-timeout 30m"},
+  {f:"--min-parallelism", cat:"Timing & Performance", arg:true, title:"Min parallelism", desc:"Minimum number of probes in flight.", ex:"--min-parallelism 10"},
+  {f:"--max-parallelism", cat:"Timing & Performance", arg:true, title:"Max parallelism", desc:"Maximum number of probes in flight.", ex:"--max-parallelism 100"},
+  {f:"--scan-delay", cat:"Timing & Performance", arg:true, title:"Scan delay", desc:"Wait at least this long between probes.", ex:"--scan-delay 1s"},
+
+  // Firewall / IDS evasion
+  {f:"-f", cat:"Firewall / IDS Evasion", arg:false, title:"Fragment packets", desc:"Fragment IP packets (into 8-byte pieces) to evade some packet filters.", ex:"-f"},
+  {f:"--mtu", cat:"Firewall / IDS Evasion", arg:true, title:"Custom MTU", desc:"Fragment using a custom MTU (multiple of 8).", ex:"--mtu 16"},
+  {f:"-D", cat:"Firewall / IDS Evasion", arg:true, title:"Decoy scan", desc:"Cloak the scan with decoy source addresses. Use ME and RND.", ex:"-D RND:10 / -D decoy1,ME,decoy2"},
+  {f:"-S", cat:"Firewall / IDS Evasion", arg:true, title:"Spoof source address", desc:"Spoof the source IP address.", ex:"-S 10.0.0.99"},
+  {f:"-e", cat:"Firewall / IDS Evasion", arg:true, title:"Network interface", desc:"Use the specified network interface.", ex:"-e eth0"},
+  {f:"-g", cat:"Firewall / IDS Evasion", arg:true, title:"Source port", desc:"Use the given source port number (aka --source-port).", ex:"-g 53"},
+  {f:"--source-port", cat:"Firewall / IDS Evasion", arg:true, title:"Source port", desc:"Spoof a fixed source port (e.g. 53 to look like DNS).", ex:"--source-port 53"},
+  {f:"--data-length", cat:"Firewall / IDS Evasion", arg:true, title:"Append random data", desc:"Append random data to sent packets.", ex:"--data-length 25"},
+  {f:"--spoof-mac", cat:"Firewall / IDS Evasion", arg:true, title:"Spoof MAC", desc:"Spoof the MAC address (vendor name, prefix, or full address).", ex:"--spoof-mac Cisco"},
+  {f:"--badsum", cat:"Firewall / IDS Evasion", arg:false, title:"Bad checksums", desc:"Send packets with bogus TCP/UDP checksums to detect certain firewalls.", ex:"--badsum"},
+  {f:"--randomize-hosts", cat:"Firewall / IDS Evasion", arg:false, title:"Randomize hosts", desc:"Randomize target host order.", ex:"--randomize-hosts"},
+
+  // Output
+  {f:"-oN", cat:"Output", arg:true, title:"Normal output", desc:"Write results in normal human-readable format to a file.", ex:"-oN scan.txt"},
+  {f:"-oX", cat:"Output", arg:true, title:"XML output", desc:"Write results in XML (great for tooling).", ex:"-oX scan.xml"},
+  {f:"-oG", cat:"Output", arg:true, title:"Grepable output", desc:"Write greppable output for command-line parsing.", ex:"-oG scan.gnmap"},
+  {f:"-oS", cat:"Output", arg:true, title:"Script-kiddie output", desc:"Novelty leet-speak output format.", ex:"-oS scan.txt"},
+  {f:"-oA", cat:"Output", arg:true, title:"All formats", desc:"Output in normal, XML and grepable formats at once with a base name.", ex:"-oA scan"},
+  {f:"-v", cat:"Output", arg:false, title:"Verbose", desc:"Increase verbosity (use -vv for more).", ex:"-v / -vv"},
+  {f:"-d", cat:"Output", arg:false, title:"Debug", desc:"Increase debugging level (use -dd for more).", ex:"-d"},
+  {f:"--reason", cat:"Output", arg:false, title:"Port state reason", desc:"Display the reason a port is in a particular state.", ex:"--reason"},
+  {f:"--open", cat:"Output", arg:false, title:"Open ports only", desc:"Only show open (or possibly-open) ports.", ex:"--open"},
+  {f:"--packet-trace", cat:"Output", arg:false, title:"Packet trace", desc:"Show all packets sent and received.", ex:"--packet-trace"},
+  {f:"--append-output", cat:"Output", arg:false, title:"Append output", desc:"Append to output files rather than overwriting.", ex:"--append-output"},
+  {f:"--resume", cat:"Output", arg:true, title:"Resume scan", desc:"Resume an aborted scan from an output file.", ex:"--resume scan.txt"},
+  {f:"--stylesheet", cat:"Output", arg:true, title:"XSL stylesheet", desc:"Apply an XSL stylesheet to XML output.", ex:"--stylesheet nmap.xsl"},
+
+  // Misc
+  {f:"-A", cat:"Misc", arg:false, title:"Aggressive scan", desc:"Enable OS detection, version detection, default scripts, and traceroute all at once (-O -sV -sC --traceroute).", ex:"-A"},
+  {f:"-6", cat:"Misc", arg:false, title:"IPv6 scan", desc:"Enable IPv6 scanning.", ex:"-6 2001:db8::1"},
+  {f:"--privileged", cat:"Misc", arg:false, title:"Assume privileged", desc:"Assume the user is fully privileged (raw sockets available).", ex:"--privileged"},
+  {f:"--unprivileged", cat:"Misc", arg:false, title:"Assume unprivileged", desc:"Assume no raw-socket privileges.", ex:"--unprivileged"},
+  {f:"--datadir", cat:"Misc", arg:true, title:"Custom data dir", desc:"Specify a custom Nmap data directory.", ex:"--datadir /path"},
+  {f:"--send-eth", cat:"Misc", arg:false, title:"Send raw ethernet", desc:"Send at the raw ethernet layer.", ex:"--send-eth"},
+  {f:"--send-ip", cat:"Misc", arg:false, title:"Send raw IP", desc:"Send at the raw IP layer.", ex:"--send-ip"},
+  {f:"-V", cat:"Misc", arg:false, title:"Version", desc:"Print the Nmap version and exit.", ex:"-V"},
+  {f:"-h", cat:"Misc", arg:false, title:"Help", desc:"Print the help summary.", ex:"-h"},
+];
+
+// Lookup maps
+const FLAG_MAP = {};
+FLAGS.forEach(x => { FLAG_MAP[x.f] = x; });
+const CATS = [...new Set(FLAGS.map(x => x.cat))];
+
+// ---- Sidebar rendering ----
+const flagList = document.getElementById('flagList');
+const catFilter = document.getElementById('catFilter');
+const sidebarSearch = document.getElementById('sidebarSearch');
+
+CATS.forEach(c => {
+  const o = document.createElement('option');
+  o.value = c; o.textContent = c;
+  catFilter.appendChild(o);
+});
+
+function renderSidebar() {
+  const q = sidebarSearch.value.trim().toLowerCase();
+  const cf = catFilter.value;
+  flagList.innerHTML = '';
+  CATS.forEach(cat => {
+    if (cf && cf !== cat) return;
+    const items = FLAGS.filter(x => x.cat === cat).filter(x => {
+      if (!q) return true;
+      return (x.f + ' ' + x.title + ' ' + x.desc).toLowerCase().includes(q);
+    });
+    if (!items.length) return;
+    const h = document.createElement('div');
+    h.className = 'cat-header';
+    h.textContent = cat;
+    flagList.appendChild(h);
+    items.forEach(x => {
+      const row = document.createElement('div');
+      row.className = 'flag-row';
+      row.innerHTML = `<code class="fw-bold">${x.f}</code> <span>${x.title}</span><small>${x.desc}</small>`;
+      row.title = 'Click to add to command';
+      row.onclick = () => addFlag(x);
+      flagList.appendChild(row);
+    });
+  });
+  if (!flagList.children.length) {
+    flagList.innerHTML = '<div class="p-3 text-secondary small">No flags match your filter.</div>';
+  }
+}
+
+function addFlag(x) {
+  const ta = document.getElementById('cmdInput');
+  let v = ta.value.trim();
+  if (!v) v = 'nmap';
+  const add = x.arg ? (x.f + ' ' + (x.ex.split(' ').slice(1).join(' ') || 'VALUE')) : x.f;
+  ta.value = v + ' ' + add;
+  render();
+}
+
+sidebarSearch.addEventListener('input', renderSidebar);
+catFilter.addEventListener('change', renderSidebar);
+
+// ---- Command parsing / visualization ----
+const cmdInput = document.getElementById('cmdInput');
+const viz = document.getElementById('viz');
+const details = document.getElementById('details');
+const summary = document.getElementById('summary');
+
+// Tokenize, matching longest known flags first (handles -p-, -sC, -T4 etc.)
+function tokenize(str) {
+  return str.trim().split(/\s+/).filter(Boolean);
+}
+
+function classifyToken(tok) {
+  // exact match
+  if (FLAG_MAP[tok]) return { type:'flag', info: FLAG_MAP[tok] };
+  // combined short flags like -sSV? or attached args like -p22, -T4 handled below
+  if (tok === 'nmap') return { type:'binary' };
+  if (tok.startsWith('-')) {
+    // -T0..5 already in map. Try attached-value forms: -p80, -PS22
+    // find longest known prefix
+    let best = null;
+    FLAGS.forEach(x => {
+      if (tok.startsWith(x.f) && x.arg && tok.length > x.f.length) {
+        if (!best || x.f.length > best.f.length) best = x;
+      }
+    });
+    if (best) return { type:'flag', info: best, attached: tok.slice(best.f.length) };
+    // stacked short boolean flags like -sSVC? uncommon; mark unknown
+    return { type:'unknown', tok };
+  }
+  // otherwise it's a value or a target
+  return { type:'value', tok };
+}
+
+function looksLikeTarget(tok) {
+  return /^(\d{1,3}\.){0,3}\d{1,3}(\/\d{1,2})?$/.test(tok) ||
+         /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(tok) ||
+         /:/.test(tok) && /[a-f0-9:]+/i.test(tok);
+}
+
+function render() {
+  const toks = tokenize(cmdInput.value);
+  viz.innerHTML = '';
+  const used = [];
+  let flagCount = 0, unknownCount = 0, targets = [];
+
+  for (let i = 0; i < toks.length; i++) {
+    const tok = toks[i];
+    const c = classifyToken(tok);
+    const el = document.createElement('div');
+    el.className = 'viz-token';
+
+    if (c.type === 'binary') {
+      el.innerHTML = `<div class="vt-flag">${tok}</div><div class="vt-desc">Nmap binary</div>`;
+    } else if (c.type === 'flag') {
+      flagCount++;
+      const info = c.info;
+      let valNote = '';
+      // consume following value if flag takes arg and value not attached
+      if (info.arg && !c.attached) {
+        const next = toks[i+1];
+        if (next && !next.startsWith('-')) {
+          valNote = `<span class="badge text-bg-secondary ms-1">${next}</span>`;
+          i++;
+        }
+      } else if (c.attached) {
+        valNote = `<span class="badge text-bg-secondary ms-1">${c.attached}</span>`;
+      }
+      el.innerHTML = `<div class="vt-flag">${info.f}${valNote}</div>
+        <div class="vt-desc"><strong>${info.title}</strong> · ${info.cat}</div>`;
+      el.style.cursor = 'pointer';
+      el.onclick = () => scrollToDetail(info.f);
+      used.push(info);
+    } else if (c.type === 'value' || c.type === 'unknown') {
+      if (looksLikeTarget(tok)) {
+        targets.push(tok);
+        el.className += ' target';
+        el.innerHTML = `<div class="vt-flag">${tok}</div><div class="vt-desc">Target host / network</div>`;
+      } else {
+        unknownCount++;
+        el.className += ' unknown';
+        el.innerHTML = `<div class="vt-flag">${tok}</div><div class="vt-desc">Unrecognized token / value</div>`;
+      }
+    }
+    viz.appendChild(el);
+  }
+
+  if (!toks.length) viz.innerHTML = '<div class="text-secondary small">Enter a command above.</div>';
+
+  // Summary
+  summary.textContent = `${flagCount} flag(s) · ${targets.length} target(s)` + (unknownCount ? ` · ${unknownCount} unknown` : '');
+
+  // Details (dedup by flag)
+  const seen = new Set();
+  const uniq = used.filter(u => { if (seen.has(u.f)) return false; seen.add(u.f); return true; });
+  details.innerHTML = '';
+  if (!uniq.length) {
+    details.innerHTML = '<div class="text-secondary small">No recognized flags to describe.</div>';
+  }
+  uniq.forEach(info => {
+    const card = document.createElement('div');
+    card.className = 'card detail-card mb-2';
+    card.id = 'detail-' + cssId(info.f);
+    card.innerHTML = `<div class="card-body py-2">
+      <div class="d-flex justify-content-between">
+        <h6 class="mb-1"><code class="fw-bold">${info.f}</code> — ${info.title}</h6>
+        <span class="badge text-bg-light align-self-start">${info.cat}</span>
+      </div>
+      <p class="mb-1 small">${info.desc}</p>
+      <div class="small text-secondary">Example: <code class="mono">${info.ex}</code></div>
+    </div>`;
+    details.appendChild(card);
+  });
+}
+
+function cssId(f) { return f.replace(/[^a-z0-9]/gi, '_'); }
+function scrollToDetail(f) {
+  const el = document.getElementById('detail-' + cssId(f));
+  if (el) { el.scrollIntoView({behavior:'smooth', block:'center'}); el.classList.add('border-primary'); setTimeout(()=>el.classList.remove('border-primary'), 1200); }
+}
+
+cmdInput.addEventListener('input', render);
+document.getElementById('clearBtn').onclick = () => { cmdInput.value = ''; render(); };
+document.getElementById('copyBtn').onclick = () => {
+  navigator.clipboard.writeText(cmdInput.value).then(() => {
+    const b = document.getElementById('copyBtn');
+    const t = b.textContent; b.textContent = 'Copied!';
+    setTimeout(()=>b.textContent=t, 1200);
+  });
+};
+
+// Theme
+const themeToggle = document.getElementById('themeToggle');
+themeToggle.onchange = () => {
+  document.documentElement.setAttribute('data-bs-theme', themeToggle.checked ? 'dark' : 'light');
+};
+
+// Init
+renderSidebar();
+render();
+</script>
+</body>
+</html>
