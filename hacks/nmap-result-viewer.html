@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nmap Result Viewer</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  body { font-size: 14px; }
+  .app-grid { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+  .sidebar { border-right: 1px solid var(--bs-border-color); height: 100vh; overflow-y: auto; position: sticky; top: 0; }
+  .main { padding: 1.25rem 1.5rem; }
+  .mono { font-family: var(--bs-font-monospace); }
+  .drop { border: 1px dashed var(--bs-border-color); border-radius: .5rem; padding: 1rem; }
+  .drop.drag { background: var(--bs-tertiary-bg); border-color: var(--bs-primary); }
+  textarea.src { font-family: var(--bs-font-monospace); font-size: 13px; }
+  .host-row { padding: .45rem .75rem; cursor: pointer; border-left: 3px solid transparent; }
+  .host-row:hover { background: var(--bs-tertiary-bg); }
+  .host-row.active { background: var(--bs-tertiary-bg); border-left-color: var(--bs-primary); }
+  .host-row small { display: block; color: var(--bs-secondary-color); line-height: 1.2; }
+  .cat-header { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--bs-secondary-color); padding: .6rem .75rem .25rem; }
+  table td, table th { vertical-align: middle; }
+  .script-out { white-space: pre-wrap; font-family: var(--bs-font-monospace); font-size: 12px; margin: 0; }
+  .stat-card { border: 1px solid var(--bs-border-color); border-radius: .5rem; padding: .6rem .85rem; }
+  .stat-card .n { font-size: 1.5rem; font-weight: 600; line-height: 1; }
+  .stat-card .l { font-size: 12px; color: var(--bs-secondary-color); }
+  @media (max-width: 767px) { .app-grid { grid-template-columns: 1fr; } .sidebar { height: auto; position: static; } }
+</style>
+</head>
+<body>
+<div class="app-grid">
+  <!-- Sidebar: hosts -->
+  <aside class="sidebar bg-body-tertiary">
+    <div class="p-3 border-bottom">
+      <h6 class="mb-2 fw-bold">Hosts</h6>
+      <input id="hostSearch" type="search" class="form-control form-control-sm mb-2" placeholder="Filter hosts / IPs...">
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="upOnly" checked>
+        <label class="form-check-label small" for="upOnly">Only hosts that are up</label>
+      </div>
+    </div>
+    <div id="hostList"><div class="text-secondary small p-3">No scan loaded yet.</div></div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0">Nmap Result Viewer</h5>
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="themeToggle">
+        <label class="form-check-label small" for="themeToggle">Dark</label>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div id="inputPanel" class="drop mb-3" >
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <label class="btn btn-sm btn-outline-secondary mb-0">
+          Choose file… <input id="fileInput" type="file" accept=".xml,.txt,.nmap,.gnmap,text/xml,text/plain" hidden>
+        </label>
+        <span class="text-secondary small">or drag &amp; drop an <code>.xml</code> (nmap -oX) / <code>.txt</code> output, or paste below</span>
+        <span id="fmtBadge" class="badge text-bg-secondary ms-auto d-none"></span>
+      </div>
+      <textarea id="srcInput" class="form-control src" rows="5"
+        placeholder="Paste nmap normal output (the console text) or nmap XML here…"></textarea>
+      <div class="d-flex gap-2 mt-2">
+        <button id="parseBtn" class="btn btn-sm btn-primary">Parse</button>
+        <button id="sampleXmlBtn" class="btn btn-sm btn-outline-secondary">Load sample XML</button>
+        <button id="sampleTxtBtn" class="btn btn-sm btn-outline-secondary">Load sample text</button>
+        <button id="clearBtn" class="btn btn-sm btn-outline-secondary ms-auto">Clear</button>
+      </div>
+      <div id="parseMsg" class="small mt-2"></div>
+      <hr class="my-2">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="small text-secondary">Sessions:</span>
+        <button id="saveBtn" class="btn btn-sm btn-outline-primary" disabled>Save current</button>
+        <button id="mergeBtn" class="btn btn-sm btn-outline-primary" disabled title="Add the parsed hosts to the selected saved session">Merge into…</button>
+        <select id="sessionSelect" class="form-select form-select-sm" style="max-width:280px">
+          <option value="">Saved sessions…</option>
+        </select>
+        <button id="loadSessionBtn" class="btn btn-sm btn-outline-secondary">Load</button>
+        <button id="delSessionBtn" class="btn btn-sm btn-outline-danger">Delete</button>
+        <span id="sessionMsg" class="small text-secondary"></span>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div id="summary" class="d-none">
+      <div class="d-flex flex-wrap gap-2 mb-3" id="statCards"></div>
+      <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+        <input id="portFilter" class="form-control form-control-sm" style="max-width:220px" placeholder="Filter ports / services…">
+        <select id="stateFilter" class="form-select form-select-sm" style="max-width:180px">
+          <option value="">All port states</option>
+          <option value="open">open</option>
+          <option value="closed">closed</option>
+          <option value="filtered">filtered</option>
+          <option value="open|filtered">open|filtered</option>
+        </select>
+        <button id="expandAll" class="btn btn-sm btn-outline-secondary">Expand all</button>
+        <button id="collapseAll" class="btn btn-sm btn-outline-secondary">Collapse all</button>
+        <span id="matchCount" class="small text-secondary ms-auto"></span>
+      </div>
+    </div>
+
+    <div id="pagerTop"></div>
+    <div id="detail"></div>
+    <div id="pagerBottom"></div>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+"use strict";
+
+let SCAN = null;        // { args, start, scanner, hosts: [...] }
+let activeHost = null;  // index into SCAN.hosts
+let page = 0;           // pagination page for the detail view
+const PAGE_SIZE = 40;         // host cards rendered per page
+const MAX_SIDEBAR = 1000;     // host rows rendered in the sidebar
+const MAX_PORTS_PER_HOST = 2000; // rows rendered per host table
+
+function debounce(fn, ms) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+/* ---------------- Detection ---------------- */
+function detectFormat(text) {
+  const t = text.trimStart();
+  if (t.startsWith("<?xml") || t.startsWith("<nmaprun") || t.includes("<nmaprun")) return "xml";
+  return "text";
+}
+
+/* ---------------- XML parsing ---------------- */
+function parseXml(text) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  const err = doc.querySelector("parsererror");
+  if (err) throw new Error("Invalid XML: " + (err.textContent || "").split("\n")[0]);
+  const run = doc.querySelector("nmaprun");
+  if (!run) throw new Error("No <nmaprun> element found — is this nmap XML?");
+
+  const scan = {
+    args: run.getAttribute("args") || "",
+    scanner: (run.getAttribute("scanner") || "nmap") + " " + (run.getAttribute("version") || ""),
+    start: run.getAttribute("startstr") || "",
+    hosts: []
+  };
+
+  run.querySelectorAll("host").forEach(h => {
+    const status = h.querySelector("status");
+    const addrs = [...h.querySelectorAll("address")].map(a => ({
+      addr: a.getAttribute("addr"), type: a.getAttribute("addrtype"),
+      vendor: a.getAttribute("vendor") || ""
+    }));
+    const names = [...h.querySelectorAll("hostnames > hostname")].map(n => n.getAttribute("name"));
+    const ip = (addrs.find(a => a.type && a.type.startsWith("ip")) || addrs[0] || {}).addr || "unknown";
+
+    const ports = [...h.querySelectorAll("ports > port")].map(p => {
+      const st = p.querySelector("state");
+      const sv = p.querySelector("service");
+      const scripts = [...p.querySelectorAll("script")].map(s => ({
+        id: s.getAttribute("id"), output: s.getAttribute("output") || ""
+      }));
+      return {
+        portid: parseInt(p.getAttribute("portid"), 10),
+        protocol: p.getAttribute("protocol") || "",
+        state: st ? st.getAttribute("state") : "",
+        reason: st ? st.getAttribute("reason") : "",
+        service: sv ? (sv.getAttribute("name") || "") : "",
+        product: sv ? (sv.getAttribute("product") || "") : "",
+        version: sv ? (sv.getAttribute("version") || "") : "",
+        extrainfo: sv ? (sv.getAttribute("extrainfo") || "") : "",
+        scripts
+      };
+    });
+
+    const extraports = [...h.querySelectorAll("ports > extraports")].map(e => ({
+      state: e.getAttribute("state"), count: parseInt(e.getAttribute("count"), 10)
+    }));
+
+    const osList = [...h.querySelectorAll("os > osmatch")].map(o => ({
+      name: o.getAttribute("name"), accuracy: o.getAttribute("accuracy")
+    }));
+
+    const hostScripts = [...h.querySelectorAll("hostscript > script")].map(s => ({
+      id: s.getAttribute("id"), output: s.getAttribute("output") || ""
+    }));
+
+    scan.hosts.push({
+      ip, addrs, names,
+      state: status ? status.getAttribute("state") : "unknown",
+      reason: status ? status.getAttribute("reason") : "",
+      ports, extraports, osList, hostScripts
+    });
+  });
+
+  return scan;
+}
+
+/* ---------------- Plain text parsing ---------------- */
+function parseText(text) {
+  const lines = text.split(/\r?\n/);
+  const scan = { args: "", scanner: "nmap", start: "", hosts: [] };
+  let host = null;
+  const portRe = /^(\d+)\/(tcp|udp|sctp)\s+(open|closed|filtered|open\|filtered|closed\|filtered|unfiltered)\s*(\S+)?\s*(.*)$/i;
+
+  const startNew = () => ({ ip: "", addrs: [], names: [], state: "up", reason: "",
+    ports: [], extraports: [], osList: [], hostScripts: [] });
+
+  for (let raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    let m;
+
+    if ((m = line.match(/^#?\s*Nmap\s+([\d.]+)\s+scan initiated\s+(.*?)\s+as:\s*(.*)$/i))) {
+      scan.scanner = "nmap " + m[1]; scan.start = m[2]; scan.args = m[3]; continue;
+    }
+    if ((m = line.match(/^Nmap scan report for\s+(.+)$/i))) {
+      if (host) scan.hosts.push(host);
+      host = startNew();
+      const rest = m[1].trim();
+      const paren = rest.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+      if (paren) { host.names = [paren[1].trim()]; host.ip = paren[2].trim(); }
+      else if (/^[\d.]+$/.test(rest) || rest.includes(":")) { host.ip = rest; }
+      else { host.names = [rest]; host.ip = rest; }
+      host.addrs = [{ addr: host.ip, type: host.ip.includes(":") ? "ipv6" : "ipv4", vendor: "" }];
+      continue;
+    }
+    if (!host) continue;
+
+    if ((m = line.match(/^Host is up\s*(?:\(([^)]*)\))?/i))) { host.state = "up"; host.reason = m[1] || ""; continue; }
+    if (/^Host seems down|^\[host down\]/i.test(line)) { host.state = "down"; continue; }
+    if ((m = line.match(/^MAC Address:\s*(\S+)\s*(?:\((.*)\))?/i))) {
+      host.addrs.push({ addr: m[1], type: "mac", vendor: m[2] || "" }); continue;
+    }
+    if ((m = line.match(/^(?:Running|OS details|OS guesses|Aggressive OS guesses):\s*(.+)$/i))) {
+      host.osList.push({ name: m[1].trim(), accuracy: "" }); continue;
+    }
+    if ((m = line.match(/^(?:All\s+\d+\s+scanned ports|Not shown):\s*(.+)$/i))) {
+      // e.g. "Not shown: 998 closed ports"
+      const em = m[1].match(/(\d+)\s+(\S+)/);
+      if (em) host.extraports.push({ state: em[2], count: parseInt(em[1], 10) });
+      continue;
+    }
+    if (/^PORT\s+STATE\s+SERVICE/i.test(line)) continue;
+
+    if ((m = line.match(portRe))) {
+      const rest = (m[5] || "").trim();
+      host.ports.push({
+        portid: parseInt(m[1], 10), protocol: m[2].toLowerCase(),
+        state: m[3].toLowerCase(), reason: "",
+        service: m[4] || "", product: "", version: "", extrainfo: rest,
+        scripts: []
+      });
+      continue;
+    }
+    // script line under a port: "| ssl-cert: ..." or "|_http-title: ..."
+    if ((m = line.match(/^\|[_ ]?(.*)$/)) && host.ports.length) {
+      const p = host.ports[host.ports.length - 1];
+      const sm = m[1].match(/^([\w.-]+):\s*(.*)$/);
+      if (sm) p.scripts.push({ id: sm[1], output: sm[2] });
+      else if (p.scripts.length) p.scripts[p.scripts.length - 1].output += "\n" + m[1];
+      else p.scripts.push({ id: "output", output: m[1] });
+      continue;
+    }
+  }
+  if (host) scan.hosts.push(host);
+  if (!scan.hosts.length) throw new Error("No hosts found — expected lines like 'Nmap scan report for …'.");
+  return scan;
+}
+
+/* ---------------- Rendering ---------------- */
+const esc = s => (s == null ? "" : String(s)).replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function stateBadge(state) {
+  const cls = state === "open" ? "text-bg-success"
+    : state === "closed" ? "text-bg-secondary"
+    : state === "filtered" ? "text-bg-warning"
+    : state && state.includes("open") ? "text-bg-info" : "text-bg-light";
+  return `<span class="badge ${cls}">${esc(state)}</span>`;
+}
+
+function upHosts() { return SCAN.hosts.filter(h => h.state === "up"); }
+
+function renderStats() {
+  const hosts = SCAN.hosts;
+  const up = upHosts().length;
+  let openPorts = 0, services = new Set();
+  hosts.forEach(h => h.ports.forEach(p => {
+    if (p.state === "open") { openPorts++; if (p.service) services.add(p.service); }
+  }));
+  const cards = [
+    ["Hosts", hosts.length],
+    ["Up", up],
+    ["Open ports", openPorts],
+    ["Services", services.size]
+  ];
+  document.getElementById("statCards").innerHTML = cards.map(c =>
+    `<div class="stat-card"><div class="n">${c[1]}</div><div class="l">${c[0]}</div></div>`).join("");
+}
+
+function renderHostList() {
+  const q = document.getElementById("hostSearch").value.toLowerCase();
+  const upOnly = document.getElementById("upOnly").checked;
+  const list = document.getElementById("hostList");
+  const rows = SCAN.hosts.map((h, i) => ({ h, i }))
+    .filter(({ h }) => !upOnly || h.state === "up")
+    .filter(({ h }) => !q || h.ip.toLowerCase().includes(q) || h.names.join(" ").toLowerCase().includes(q));
+
+  if (!rows.length) { list.innerHTML = `<div class="text-secondary small p-3">No matching hosts.</div>`; return; }
+
+  const capped = rows.slice(0, MAX_SIDEBAR);
+  const note = rows.length > MAX_SIDEBAR
+    ? `<div class="cat-header">Showing ${MAX_SIDEBAR} of ${rows.length} — refine the filter above.</div>` : "";
+  list.innerHTML = note + capped.map(({ h, i }) => {
+    const open = h.ports.filter(p => p.state === "open").length;
+    const name = h.names[0] && h.names[0] !== h.ip ? h.names[0] : "";
+    return `<div class="host-row ${i === activeHost ? "active" : ""}" data-i="${i}">
+      <div class="d-flex justify-content-between align-items-center">
+        <span class="mono">${esc(h.ip)}</span>
+        <span class="badge ${h.state === "up" ? "text-bg-success" : "text-bg-secondary"}">${esc(h.state)}</span>
+      </div>
+      <small>${name ? esc(name) + " · " : ""}${open} open port${open === 1 ? "" : "s"}</small>
+    </div>`;
+  }).join("");
+
+  list.querySelectorAll(".host-row").forEach(el =>
+    el.addEventListener("click", () => { activeHost = parseInt(el.dataset.i, 10); page = 0; renderHostList(); renderDetail(); }));
+}
+
+function portMatches(p) {
+  const q = document.getElementById("portFilter").value.toLowerCase();
+  const sf = document.getElementById("stateFilter").value;
+  if (sf && p.state !== sf) return false;
+  if (!q) return true;
+  return [p.portid, p.protocol, p.state, p.service, p.product, p.version, p.extrainfo]
+    .join(" ").toLowerCase().includes(q);
+}
+
+function hostCard(h, idx, openState) {
+  const allMatched = h.ports.filter(portMatches);
+  const ports = allMatched.slice(0, MAX_PORTS_PER_HOST);
+  const portCap = allMatched.length > MAX_PORTS_PER_HOST
+    ? `<div class="small text-secondary mt-2">Showing first ${MAX_PORTS_PER_HOST} of ${allMatched.length} matching ports — narrow the port filter to see the rest.</div>` : "";
+  const collapseId = "h" + idx;
+  const nameLine = h.names.filter(n => n && n !== h.ip).join(", ");
+  const macs = h.addrs.filter(a => a.type === "mac")
+    .map(a => a.addr + (a.vendor ? ` (${a.vendor})` : "")).join(", ");
+
+  const portRows = ports.length ? ports.map(p => {
+    const info = [p.product, p.version, p.extrainfo].filter(Boolean).join(" ");
+    const scripts = p.scripts.length ? `<tr class="table-active"><td colspan="4">${
+      p.scripts.map(s => `<div class="mb-1"><span class="mono text-secondary">${esc(s.id)}</span>
+        <pre class="script-out">${esc(s.output)}</pre></div>`).join("")}</td></tr>` : "";
+    return `<tr>
+      <td class="mono">${p.portid}/${esc(p.protocol)}</td>
+      <td>${stateBadge(p.state)}</td>
+      <td class="mono">${esc(p.service) || "<span class='text-secondary'>—</span>"}</td>
+      <td>${esc(info) || "<span class='text-secondary'>—</span>"}</td>
+    </tr>${scripts}`;
+  }).join("") : `<tr><td colspan="4" class="text-secondary">No ports match the filter.</td></tr>`;
+
+  const extra = h.extraports.length
+    ? `<div class="small text-secondary mt-2">Not shown: ${h.extraports.map(e => `${e.count} ${esc(e.state)}`).join(", ")}</div>` : "";
+  const os = h.osList.length
+    ? `<div class="small mt-2"><strong>OS:</strong> ${h.osList.map(o => esc(o.name) + (o.accuracy ? ` (${o.accuracy}%)` : "")).join("; ")}</div>` : "";
+  const hs = h.hostScripts && h.hostScripts.length
+    ? `<div class="mt-2">${h.hostScripts.map(s => `<div class="mb-1"><span class="mono text-secondary">${esc(s.id)}</span>
+        <pre class="script-out">${esc(s.output)}</pre></div>`).join("")}</div>` : "";
+
+  return `<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center" role="button"
+         data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+      <div>
+        <span class="mono fw-semibold">${esc(h.ip)}</span>
+        ${nameLine ? `<span class="text-secondary ms-2">${esc(nameLine)}</span>` : ""}
+      </div>
+      <span class="badge ${h.state === "up" ? "text-bg-success" : "text-bg-secondary"}">${esc(h.state)}</span>
+    </div>
+    <div id="${collapseId}" class="collapse ${openState ? "show" : ""}">
+      <div class="card-body">
+        ${macs ? `<div class="small text-secondary mb-2">MAC: ${esc(macs)}</div>` : ""}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Port</th><th>State</th><th>Service</th><th>Version / info</th></tr></thead>
+            <tbody>${portRows}</tbody>
+          </table>
+        </div>
+        ${portCap}${extra}${os}${hs}
+      </div>
+    </div>
+  </div>`;
+}
+
+function pagerHtml(total, pages) {
+  if (pages <= 1) return "";
+  const from = page * PAGE_SIZE + 1, to = Math.min((page + 1) * PAGE_SIZE, total);
+  return `<div class="d-flex align-items-center gap-2 my-2">
+    <button class="btn btn-sm btn-outline-secondary pg-prev" ${page === 0 ? "disabled" : ""}>← Prev</button>
+    <span class="small text-secondary">Hosts ${from}–${to} of ${total} · page ${page + 1}/${pages}</span>
+    <button class="btn btn-sm btn-outline-secondary pg-next" ${page >= pages - 1 ? "disabled" : ""}>Next →</button>
+  </div>`;
+}
+
+function renderDetail() {
+  const det = document.getElementById("detail");
+  const upOnly = document.getElementById("upOnly").checked;
+  let hosts = SCAN.hosts.map((h, i) => ({ h, i }));
+  if (activeHost != null) hosts = hosts.filter(x => x.i === activeHost);
+  else if (upOnly) hosts = hosts.filter(x => x.h.state === "up");
+
+  // Count matching ports across the visible hosts for the filter readout.
+  let matchPorts = 0;
+  hosts.forEach(({ h }) => { matchPorts += h.ports.filter(portMatches).length; });
+  document.getElementById("matchCount").textContent =
+    `${hosts.length} host(s) · ${matchPorts} matching port(s)`;
+
+  const total = hosts.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (page >= pages) page = pages - 1;
+  if (page < 0) page = 0;
+
+  const banner = activeHost != null
+    ? `<div class="mb-2"><button id="showAll" class="btn btn-sm btn-outline-secondary">← Show all hosts</button></div>` : "";
+
+  let pageHosts, openState;
+  if (activeHost != null) { pageHosts = hosts; openState = true; }
+  else {
+    pageHosts = hosts.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+    openState = pageHosts.length <= 3;
+  }
+
+  if (!total) {
+    det.innerHTML = banner + `<div class="text-secondary p-3">No hosts to show. Toggle "Only hosts that are up" or adjust filters.</div>`;
+    document.getElementById("pagerTop").innerHTML = "";
+    document.getElementById("pagerBottom").innerHTML = "";
+  } else {
+    det.innerHTML = banner + pageHosts.map(({ h, i }) => hostCard(h, i, openState)).join("");
+    const pg = activeHost != null ? "" : pagerHtml(total, pages);
+    document.getElementById("pagerTop").innerHTML = pg;
+    document.getElementById("pagerBottom").innerHTML = pg;
+    document.querySelectorAll(".pg-prev").forEach(b =>
+      b.addEventListener("click", () => { page--; renderDetail(); window.scrollTo(0, 0); }));
+    document.querySelectorAll(".pg-next").forEach(b =>
+      b.addEventListener("click", () => { page++; renderDetail(); window.scrollTo(0, 0); }));
+  }
+
+  const sa = document.getElementById("showAll");
+  if (sa) sa.addEventListener("click", () => { activeHost = null; page = 0; renderHostList(); renderDetail(); });
+}
+
+function renderAll() {
+  document.getElementById("summary").classList.remove("d-none");
+  renderStats(); renderHostList(); renderDetail();
+}
+
+/* ---------------- Sessions / theme ---------------- */
+const STORAGE_SESSIONS_KEY = "nmap-result-viewer.sessions";
+const STORAGE_LAST_KEY = "nmap-result-viewer.last";
+const STORAGE_THEME_KEY = "nmap-result-viewer.theme";
+
+function storageRead(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function storageWrite(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore quota / privacy mode failures.
+  }
+}
+
+function cloneScan(scan) {
+  return JSON.parse(JSON.stringify(scan));
+}
+
+function scanLabel(scan) {
+  const hostCount = scan?.hosts?.length || 0;
+  const upCount = scan?.hosts?.filter(h => h.state === "up").length || 0;
+  const parts = [];
+  if (scan?.scanner) parts.push(scan.scanner.trim());
+  if (scan?.start) parts.push(scan.start);
+  parts.push(`${hostCount} host${hostCount === 1 ? "" : "s"}`);
+  parts.push(`${upCount} up`);
+  return parts.join(" · ");
+}
+
+function sessionId() {
+  return globalThis.crypto && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : String(Date.now()) + Math.random().toString(16).slice(2);
+}
+
+function getSessions() {
+  const sessions = storageRead(STORAGE_SESSIONS_KEY, []);
+  return Array.isArray(sessions) ? sessions : [];
+}
+
+function setSessions(sessions) {
+  storageWrite(STORAGE_SESSIONS_KEY, sessions);
+  refreshSessionSelect();
+}
+
+function refreshSessionSelect(selectedId = "") {
+  const select = document.getElementById("sessionSelect");
+  const sessions = getSessions();
+  select.innerHTML = '<option value="">Saved sessions…</option>';
+  sessions.forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.name || scanLabel(s.scan);
+    if (s.updatedAt) opt.textContent += ` · ${new Date(s.updatedAt).toLocaleString()}`;
+    select.appendChild(opt);
+  });
+  if (selectedId) select.value = selectedId;
+}
+
+function autosaveLast() {
+  if (!SCAN) return;
+  storageWrite(STORAGE_LAST_KEY, SCAN);
+}
+
+function mergeUniqueBy(target, source, keyFn) {
+  const seen = new Set(target.map(keyFn));
+  source.forEach(item => {
+    const key = keyFn(item);
+    if (!seen.has(key)) {
+      seen.add(key);
+      target.push(item);
+    }
+  });
+}
+
+function mergeScanData(base, incoming) {
+  const out = cloneScan(base);
+  const hostByIp = new Map(out.hosts.map(h => [h.ip, h]));
+
+  incoming.hosts.forEach(srcHost => {
+    const host = hostByIp.get(srcHost.ip);
+    if (!host) {
+      out.hosts.push(cloneScan({ hosts: [srcHost] }).hosts[0]);
+      hostByIp.set(srcHost.ip, out.hosts[out.hosts.length - 1]);
+      return;
+    }
+
+    host.state = host.state === "up" || srcHost.state === "up" ? "up" : (host.state || srcHost.state || "unknown");
+    host.reason = host.reason || srcHost.reason || "";
+    mergeUniqueBy(host.names, srcHost.names || [], v => v);
+    mergeUniqueBy(host.addrs, srcHost.addrs || [], a => `${a.type}|${a.addr}|${a.vendor || ""}`);
+    mergeUniqueBy(host.extraports, srcHost.extraports || [], e => `${e.state}|${e.count}`);
+    mergeUniqueBy(host.osList, srcHost.osList || [], o => `${o.name}|${o.accuracy || ""}`);
+    mergeUniqueBy(host.hostScripts, srcHost.hostScripts || [], s => `${s.id}|${s.output}`);
+
+    const portKey = p => `${p.protocol}|${p.portid}`;
+    const existingPorts = new Map(host.ports.map(p => [portKey(p), p]));
+    srcHost.ports.forEach(srcPort => {
+      const port = existingPorts.get(portKey(srcPort));
+      if (!port) {
+        host.ports.push(cloneScan({ hosts: [{ ports: [srcPort] }] }).hosts[0].ports[0]);
+        return;
+      }
+      port.state = port.state || srcPort.state;
+      port.reason = port.reason || srcPort.reason || "";
+      port.service = port.service || srcPort.service || "";
+      port.product = port.product || srcPort.product || "";
+      port.version = port.version || srcPort.version || "";
+      port.extrainfo = port.extrainfo || srcPort.extrainfo || "";
+      mergeUniqueBy(port.scripts, srcPort.scripts || [], s => `${s.id}|${s.output}`);
+    });
+  });
+
+  return out;
+}
+
+function setCurrentScan(scan, message, fmtText) {
+  SCAN = scan;
+  activeHost = null;
+  page = 0;
+  document.getElementById("fmtBadge").textContent = fmtText || "";
+  document.getElementById("fmtBadge").classList.toggle("d-none", !fmtText);
+  document.getElementById("parseMsg").className = "small mt-2 text-success";
+  document.getElementById("parseMsg").textContent = message;
+  document.getElementById("saveBtn").disabled = false;
+  document.getElementById("mergeBtn").disabled = false;
+  autosaveLast();
+  renderAll();
+}
+
+function saveCurrentSession() {
+  if (!SCAN) return;
+  const sessions = getSessions();
+  const suggested = (SCAN.args && SCAN.args.trim()) ? SCAN.args.trim() : scanLabel(SCAN);
+  const name = prompt("Session name:", suggested);
+  if (name === null) return;
+
+  const trimmed = name.trim() || suggested;
+  const now = new Date().toISOString();
+  const existing = sessions.find(s => s.name === trimmed);
+  const id = existing ? existing.id : sessionId();
+  const next = sessions.filter(s => s.id !== id);
+  next.unshift({
+    id,
+    name: trimmed,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    scan: cloneScan(SCAN)
+  });
+  setSessions(next);
+  document.getElementById("sessionMsg").className = "small text-success";
+  document.getElementById("sessionMsg").textContent = `Saved "${trimmed}".`;
+  refreshSessionSelect(id);
+}
+
+function loadSelectedSession() {
+  const select = document.getElementById("sessionSelect");
+  const id = select.value;
+  if (!id) {
+    document.getElementById("sessionMsg").className = "small text-secondary";
+    document.getElementById("sessionMsg").textContent = "Choose a saved session first.";
+    return;
+  }
+  const session = getSessions().find(s => s.id === id);
+  if (!session) return;
+  setCurrentScan(cloneScan(session.scan), `Loaded saved session "${session.name || scanLabel(session.scan)}".`, "SESSION");
+}
+
+function deleteSelectedSession() {
+  const select = document.getElementById("sessionSelect");
+  const id = select.value;
+  if (!id) {
+    document.getElementById("sessionMsg").className = "small text-secondary";
+    document.getElementById("sessionMsg").textContent = "Choose a saved session first.";
+    return;
+  }
+  const sessions = getSessions();
+  const session = sessions.find(s => s.id === id);
+  if (!session) return;
+  if (!confirm(`Delete session "${session.name || scanLabel(session.scan)}"?`)) return;
+  setSessions(sessions.filter(s => s.id !== id));
+  document.getElementById("sessionMsg").className = "small text-success";
+  document.getElementById("sessionMsg").textContent = "Session deleted.";
+}
+
+function mergeIntoSelectedSession() {
+  if (!SCAN) return;
+  const select = document.getElementById("sessionSelect");
+  const id = select.value;
+  if (!id) {
+    document.getElementById("sessionMsg").className = "small text-secondary";
+    document.getElementById("sessionMsg").textContent = "Choose a saved session first.";
+    return;
+  }
+  const sessions = getSessions();
+  const idx = sessions.findIndex(s => s.id === id);
+  if (idx === -1) return;
+  const session = sessions[idx];
+  const merged = mergeScanData(session.scan, SCAN);
+  sessions[idx] = {
+    ...session,
+    updatedAt: new Date().toISOString(),
+    scan: merged
+  };
+  setSessions(sessions);
+  document.getElementById("sessionMsg").className = "small text-success";
+  document.getElementById("sessionMsg").textContent = `Merged into "${session.name || scanLabel(session.scan)}".`;
+  refreshSessionSelect(id);
+}
+
+function applySavedTheme() {
+  const saved = storageRead(STORAGE_THEME_KEY, "light");
+  const dark = saved === "dark";
+  themeToggle.checked = dark;
+  document.documentElement.setAttribute("data-bs-theme", dark ? "dark" : "light");
+}
+
+/* ---------------- Load / events ---------------- */
+function load(text) {
+  const msg = document.getElementById("parseMsg");
+  const badge = document.getElementById("fmtBadge");
+  try {
+    const fmt = detectFormat(text);
+    SCAN = fmt === "xml" ? parseXml(text) : parseText(text);
+    const up = upHosts().length;
+    setCurrentScan(
+      SCAN,
+      `Parsed ${fmt.toUpperCase()}: ${SCAN.hosts.length} host(s), ${up} up. ` +
+        (SCAN.args ? "Command: " + SCAN.args : ""),
+      fmt.toUpperCase()
+    );
+    refreshSessionSelect();
+  } catch (e) {
+    SCAN = null;
+    document.getElementById("saveBtn").disabled = true;
+    document.getElementById("mergeBtn").disabled = true;
+    badge.classList.add("d-none");
+    document.getElementById("summary").classList.add("d-none");
+    document.getElementById("detail").innerHTML = "";
+    document.getElementById("hostList").innerHTML = `<div class="text-secondary small p-3">No scan loaded.</div>`;
+    msg.className = "small mt-2 text-danger";
+    msg.textContent = "Could not parse: " + e.message;
+  }
+}
+
+document.getElementById("parseBtn").addEventListener("click", () =>
+  load(document.getElementById("srcInput").value));
+document.getElementById("clearBtn").addEventListener("click", () => {
+  document.getElementById("srcInput").value = "";
+  document.getElementById("parseMsg").textContent = "";
+  document.getElementById("fmtBadge").classList.add("d-none");
+  document.getElementById("summary").classList.add("d-none");
+  document.getElementById("detail").innerHTML = "";
+  SCAN = null; activeHost = null;
+  document.getElementById("hostList").innerHTML = `<div class="text-secondary small p-3">No scan loaded yet.</div>`;
+});
+
+document.getElementById("fileInput").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { document.getElementById("srcInput").value = r.result; load(r.result); };
+  r.readAsText(f);
+});
+
+const panel = document.getElementById("inputPanel");
+["dragenter", "dragover"].forEach(ev => panel.addEventListener(ev, e => {
+  e.preventDefault(); panel.classList.add("drag");
+}));
+["dragleave", "drop"].forEach(ev => panel.addEventListener(ev, e => {
+  e.preventDefault(); if (ev === "dragleave" && panel.contains(e.relatedTarget)) return; panel.classList.remove("drag");
+}));
+panel.addEventListener("drop", e => {
+  const f = e.dataTransfer.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { document.getElementById("srcInput").value = r.result; load(r.result); };
+  r.readAsText(f);
+});
+
+const onSideFilter = debounce(() => { if (SCAN) { page = 0; renderHostList(); renderDetail(); } }, 150);
+document.getElementById("hostSearch").addEventListener("input", onSideFilter);
+document.getElementById("upOnly").addEventListener("change", () => { if (SCAN) { page = 0; renderHostList(); renderDetail(); } });
+const onPortFilter = debounce(() => { if (SCAN) { page = 0; renderDetail(); } }, 150);
+document.getElementById("portFilter").addEventListener("input", onPortFilter);
+document.getElementById("stateFilter").addEventListener("change", () => { if (SCAN) { page = 0; renderDetail(); } });
+document.getElementById("expandAll").addEventListener("click", () =>
+  document.querySelectorAll("#detail .collapse").forEach(c => c.classList.add("show")));
+document.getElementById("collapseAll").addEventListener("click", () =>
+  document.querySelectorAll("#detail .collapse").forEach(c => c.classList.remove("show")));
+document.getElementById("saveBtn").addEventListener("click", saveCurrentSession);
+document.getElementById("mergeBtn").addEventListener("click", mergeIntoSelectedSession);
+document.getElementById("loadSessionBtn").addEventListener("click", loadSelectedSession);
+document.getElementById("delSessionBtn").addEventListener("click", deleteSelectedSession);
+document.getElementById("sessionSelect").addEventListener("change", () => {
+  document.getElementById("sessionMsg").textContent = "";
+});
+
+/* theme */
+const themeToggle = document.getElementById("themeToggle");
+applySavedTheme();
+themeToggle.addEventListener("change", () => {
+  const dark = themeToggle.checked;
+  document.documentElement.setAttribute("data-bs-theme", dark ? "dark" : "light");
+  storageWrite(STORAGE_THEME_KEY, dark ? "dark" : "light");
+});
+refreshSessionSelect();
+
+/* samples */
+const SAMPLE_TXT = `Starting Nmap 7.94 ( https://nmap.org ) at 2026-07-15 10:22 UTC
+Nmap scan report for scanme.nmap.org (45.33.32.156)
+Host is up (0.089s latency).
+Not shown: 996 closed tcp ports (reset)
+PORT      STATE SERVICE     VERSION
+22/tcp    open  ssh         OpenSSH 6.6.1p1 Ubuntu 2ubuntu2.13 (Ubuntu Linux; protocol 2.0)
+80/tcp    open  http        Apache httpd 2.4.7 ((Ubuntu))
+|_http-title: Go ahead and ScanMe!
+9929/tcp  open  nping-echo  Nping echo
+31337/tcp open  tcpwrapped
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Nmap scan report for 192.168.1.1
+Host is up (0.0012s latency).
+Not shown: 999 filtered tcp ports
+PORT   STATE SERVICE VERSION
+53/tcp open  domain  dnsmasq 2.80
+MAC Address: AA:BB:CC:DD:EE:FF (Netgear)`;
+
+const SAMPLE_XML = `<?xml version="1.0"?>
+<nmaprun scanner="nmap" args="nmap -sV -sC -oX - 45.33.32.156" version="7.94" startstr="Wed Jul 15 10:22:00 2026">
+<host><status state="up" reason="echo-reply"/>
+<address addr="45.33.32.156" addrtype="ipv4"/>
+<hostnames><hostname name="scanme.nmap.org" type="user"/></hostnames>
+<ports>
+<extraports state="closed" count="996"/>
+<port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/>
+<service name="ssh" product="OpenSSH" version="6.6.1p1 Ubuntu 2ubuntu2.13" extrainfo="Ubuntu Linux; protocol 2.0"/>
+<script id="ssh-hostkey" output="2048 aa:bb:cc RSA"/></port>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack"/>
+<service name="http" product="Apache httpd" version="2.4.7" extrainfo="Ubuntu"/>
+<script id="http-title" output="Go ahead and ScanMe!"/></port>
+</ports>
+<os><osmatch name="Linux 3.13 - 3.16" accuracy="95"/></os>
+</host>
+</nmaprun>`;
+
+document.getElementById("sampleTxtBtn").addEventListener("click", () => {
+  document.getElementById("srcInput").value = SAMPLE_TXT; load(SAMPLE_TXT);
+});
+document.getElementById("sampleXmlBtn").addEventListener("click", () => {
+  document.getElementById("srcInput").value = SAMPLE_XML; load(SAMPLE_XML);
+});
+</script>
+</body>
+</html>
